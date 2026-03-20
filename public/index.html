@@ -1,0 +1,1216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HALBAUTOMATIK // SPACE INVADERS</title>
+<style>
+  :root {
+    --bg: #07030e;
+    --violet: #b794f6;
+    --violet-dim: #6b51a3;
+    --violet-bright: #d4b5ff;
+    --violet-glow: rgba(167, 139, 250, 0.5);
+    --violet-hot: #e2c1ff;
+    --amber: #f6c794;
+    --red: #f66;
+    --green: #6f6;
+    --console-width: 360px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    overflow: hidden;
+    cursor: none;
+  }
+
+  /* --- LAYOUT: game left, console right --- */
+  #app {
+    display: flex;
+    width: 100%; height: 100%;
+  }
+
+  #crt {
+    position: relative;
+    flex: 1;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  /* Scanlines */
+  #crt::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.15) 2px,
+      rgba(0,0,0,0.15) 4px
+    );
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* Vignette */
+  #crt::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.7) 100%);
+    pointer-events: none;
+    z-index: 11;
+  }
+
+  #screen {
+    font-family: 'Courier New', Courier, monospace;
+    font-weight: 400;
+    color: var(--violet);
+    white-space: pre;
+    line-height: 1.18;
+    letter-spacing: 0.01em;
+    text-shadow: 0 0 8px var(--violet-glow), 0 0 2px var(--violet-glow);
+    position: relative;
+    z-index: 5;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  @keyframes flicker {
+    0%, 100% { opacity: 1; }
+    92% { opacity: 1; }
+    93% { opacity: 0.8; }
+    94% { opacity: 1; }
+    97% { opacity: 0.9; }
+    98% { opacity: 1; }
+  }
+  #screen { animation: flicker 8s infinite; }
+
+  @keyframes screenFlash {
+    0% { filter: brightness(3) saturate(0); }
+    100% { filter: brightness(1) saturate(1); }
+  }
+  .flash { animation: screenFlash 0.3s ease-out; }
+
+  /* --- DEV CONSOLE --- */
+  #dev-console {
+    width: var(--console-width);
+    height: 100%;
+    background: #0c0818;
+    border-left: 1px solid var(--violet-dim);
+    display: none;            /* hidden by default */
+    flex-direction: column;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 11px;
+    color: #9a86c7;
+    overflow: hidden;
+    z-index: 50;
+  }
+  #dev-console.open { display: flex; }
+
+  #console-header {
+    padding: 8px 12px;
+    background: #130e22;
+    border-bottom: 1px solid var(--violet-dim);
+    color: var(--violet-bright);
+    font-size: 11px;
+    font-weight: bold;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: default;
+  }
+  #console-header span { opacity: 0.5; font-weight: normal; font-size: 10px; }
+
+  #console-stats {
+    padding: 6px 12px;
+    background: #110d1e;
+    border-bottom: 1px solid #1e1636;
+    font-size: 10px;
+    line-height: 1.6;
+    color: #7a6a9e;
+  }
+  #console-stats b { color: var(--violet); }
+
+  #console-log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--violet-dim) transparent;
+  }
+  #console-log::-webkit-scrollbar { width: 5px; }
+  #console-log::-webkit-scrollbar-track { background: transparent; }
+  #console-log::-webkit-scrollbar-thumb { background: var(--violet-dim); border-radius: 3px; }
+
+  .log-entry {
+    padding: 2px 12px;
+    line-height: 1.5;
+    border-bottom: 1px solid rgba(107, 81, 163, 0.08);
+  }
+  .log-entry:hover { background: rgba(183, 148, 246, 0.04); }
+  .log-time { color: #4a3d6e; margin-right: 6px; }
+  .log-tag  { font-weight: bold; margin-right: 6px; }
+
+  .log-entry.sys  .log-tag { color: #6b8aed; }
+  .log-entry.game .log-tag { color: var(--violet); }
+  .log-entry.hit  .log-tag { color: #ed6b6b; }
+  .log-entry.score .log-tag { color: #6bed8a; }
+  .log-entry.wave .log-tag  { color: var(--amber); }
+  .log-entry.input .log-tag { color: #8aede6; }
+  .log-entry.warn .log-tag  { color: #edcf6b; }
+
+  #console-footer {
+    padding: 6px 12px;
+    background: #130e22;
+    border-top: 1px solid var(--violet-dim);
+    font-size: 10px;
+    color: #4a3d6e;
+  }
+
+  /* Mobile controls */
+  #mobile-controls {
+    display: none;
+    position: fixed;
+    bottom: 20px;
+    left: 0; right: 0;
+    z-index: 20;
+    justify-content: center;
+    gap: 15px;
+    padding: 0 20px;
+  }
+  .ctrl-btn {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 24px;
+    background: rgba(183, 148, 246, 0.1);
+    color: var(--violet);
+    border: 1px solid var(--violet-dim);
+    border-radius: 8px;
+    padding: 15px 25px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .ctrl-btn:active { background: rgba(183, 148, 246, 0.3); }
+
+  @media (max-width: 900px), (pointer: coarse) {
+    #mobile-controls { display: flex; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="crt">
+    <pre id="screen"></pre>
+  </div>
+  <div id="dev-console">
+    <div id="console-header">
+      DEV CONSOLE
+      <span>` to close</span>
+    </div>
+    <div id="console-stats"></div>
+    <div id="console-log"></div>
+    <div id="console-footer">HALBAUTOMATIK SPACE INVADERS v1.0</div>
+  </div>
+</div>
+<div id="mobile-controls">
+  <button class="ctrl-btn" id="btn-left">&larr;</button>
+  <button class="ctrl-btn" id="btn-fire">FIRE</button>
+  <button class="ctrl-btn" id="btn-right">&rarr;</button>
+</div>
+
+<script>
+// =====================================================================
+//  HALBAUTOMATIK SPACE INVADERS -- ASCII EDITION
+// =====================================================================
+
+const COLS = 110;
+const ROWS = 48;
+const TICK_RATE = 16;
+const ALIEN_MOVE_BASE = 500;
+
+// ===== DEV CONSOLE ===================================================
+const devConsole = {
+  el: document.getElementById('dev-console'),
+  logEl: document.getElementById('console-log'),
+  statsEl: document.getElementById('console-stats'),
+  open: false,
+  maxEntries: 300,
+  count: 0,
+  startTime: Date.now(),
+  frameCount: 0,
+  fps: 0,
+  fpsTimer: 0,
+
+  toggle() {
+    this.open = !this.open;
+    this.el.classList.toggle('open', this.open);
+    fitScreen(); // re-fit because viewport width changed
+    this.log('sys', this.open ? 'Console opened' : 'Console closed');
+  },
+
+  log(tag, msg) {
+    const now = new Date();
+    const ts = String(now.getHours()).padStart(2,'0') + ':' +
+               String(now.getMinutes()).padStart(2,'0') + ':' +
+               String(now.getSeconds()).padStart(2,'0') + '.' +
+               String(now.getMilliseconds()).padStart(3,'0');
+
+    const entry = document.createElement('div');
+    entry.className = 'log-entry ' + tag;
+    entry.innerHTML = '<span class="log-time">' + ts + '</span>' +
+                      '<span class="log-tag">[' + tag.toUpperCase() + ']</span>' +
+                      '<span class="log-msg">' + msg + '</span>';
+    this.logEl.appendChild(entry);
+    this.count++;
+
+    // Prune old entries
+    while (this.logEl.children.length > this.maxEntries) {
+      this.logEl.removeChild(this.logEl.firstChild);
+    }
+
+    // Auto-scroll
+    this.logEl.scrollTop = this.logEl.scrollHeight;
+
+    // Also log to browser console
+    console.log('[' + tag.toUpperCase() + '] ' + msg);
+  },
+
+  updateStats(dt) {
+    this.frameCount++;
+    this.fpsTimer += dt;
+    if (this.fpsTimer >= 1000) {
+      this.fps = this.frameCount;
+      this.frameCount = 0;
+      this.fpsTimer = 0;
+    }
+
+    if (!this.open) return;
+
+    const alive = aliens.filter(a => a.alive).length;
+    const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
+    const min = Math.floor(elapsed / 60);
+    const sec = elapsed % 60;
+
+    this.statsEl.innerHTML =
+      '<b>FPS:</b> ' + this.fps +
+      '  <b>dt:</b> ' + dt.toFixed(1) + 'ms' +
+      '  <b>Screen:</b> ' + currentScreen +
+      '  <b>Input:</b> ' + inputMode +
+      '<br>' +
+      '<b>Player:</b> x=' + Math.floor(player.x) + ' y=' + player.y +
+      '  <b>Dead:</b> ' + player.dead +
+      '  <b>Lives:</b> ' + player.lives +
+      '<br>' +
+      '<b>Aliens:</b> ' + alive + '/' + aliens.length +
+      '  <b>Wave:</b> ' + wave +
+      '  <b>Speed:</b> ' + Math.floor(alienMoveInterval) + 'ms' +
+      '<br>' +
+      '<b>Bullets:</b> P=' + playerBullets.length + ' A=' + alienBullets.length +
+      '  <b>Shields:</b> ' + shields.length +
+      '  <b>Explosions:</b> ' + explosions.length +
+      '<br>' +
+      '<b>Session:</b> ' + min + 'm' + String(sec).padStart(2,'0') + 's' +
+      '  <b>Events:</b> ' + this.count +
+      '  <b>Mystery:</b> ' + (mystery ? 'ACTIVE' : 'none');
+  }
+};
+
+// ===== SPRITES =======================================================
+const SPRITES = {
+  player: [
+    '    /\\    ',
+    '   /  \\   ',
+    '  / /\\ \\  ',
+    ' / /  \\ \\ ',
+    '/ /   / / ',
+    '\\/   / /  ',
+    ' \\  / /   ',
+    '  \\/_/    ',
+  ],
+
+  alienA1: [
+    '  /==\\  ',
+    ' |o  o| ',
+    ' |/\\/\\| ',
+    '  \\  /  ',
+    '  /\\/\\  ',
+  ],
+  alienA2: [
+    '  /==\\  ',
+    ' |o  o| ',
+    ' |/\\/\\| ',
+    '  /  \\  ',
+    ' /    \\ ',
+  ],
+
+  alienB1: [
+    '  {~~}  ',
+    ' {*  *} ',
+    '  {~~}  ',
+    '  //\\\\  ',
+    ' //  \\\\ ',
+  ],
+  alienB2: [
+    '  {~~}  ',
+    ' {*  *} ',
+    '  {~~}  ',
+    '  \\\\//  ',
+    ' \\\\  // ',
+  ],
+
+  alienC1: [
+    ' [####] ',
+    ' [<  >] ',
+    ' [####] ',
+    '  [  ]  ',
+    '  /  \\  ',
+  ],
+  alienC2: [
+    ' [####] ',
+    ' [<  >] ',
+    ' [####] ',
+    '  [  ]  ',
+    '  \\  /  ',
+  ],
+
+  mystery: [
+    ' __/===\\__ ',
+    '|  ?????  |',
+    ' ~~\\===/~~ ',
+  ],
+  raider1: [
+    '      ___=====[#####]=====___      ',
+    '  ___/#######\\__| |__ /#######\\___ ',
+    ' /#######/\\####\\ | /####/\\#######\\ ',
+    '|#####==<  O  O  O  O  >==#####|   ',
+    '|######\\_/===[###]===\\_/######|   ',
+    ' \\####__/  /_/   \\_\\  \\__####/    ',
+    '   \\___=====/_____\\=====___/      ',
+  ],
+  raider2: [
+    '      ___=====[#####]=====___      ',
+    '  ___/#######\\__| |__ /#######\\___ ',
+    ' /#######\\/####\\ | /####\\/#######\\ ',
+    '|#####==<  O  O  O  O  >==#####|   ',
+    '|######\\_/===[###]===\\_/######|   ',
+    ' \\####__/  \\_\\   /_/  \\__####/    ',
+    '   \\___=====/_____\\=====___/      ',
+  ],
+
+  explode1: [
+    ' \\  | /  ',
+    '-- ** -- ',
+    ' /  | \\  ',
+  ],
+  explode2: [
+    '  . * .  ',
+    ' * . . * ',
+    '  . * .  ',
+  ],
+};
+
+function spriteSize(sprite) {
+  return { w: Math.max(...sprite.map(r => r.length)), h: sprite.length };
+}
+
+// ===== SCREEN BUFFER =================================================
+class ScreenBuffer {
+  constructor(cols, rows) {
+    this.cols = cols;
+    this.rows = rows;
+    this.clear();
+  }
+  clear() {
+    this.buf = [];
+    for (let r = 0; r < this.rows; r++) {
+      this.buf.push(new Array(this.cols).fill(' '));
+    }
+  }
+  drawSprite(sprite, x, y) {
+    for (let r = 0; r < sprite.length; r++) {
+      const row = y + r;
+      if (row < 0 || row >= this.rows) continue;
+      for (let c = 0; c < sprite[r].length; c++) {
+        const col = x + c;
+        if (col < 0 || col >= this.cols) continue;
+        if (sprite[r][c] !== ' ') this.buf[row][col] = sprite[r][c];
+      }
+    }
+  }
+  drawText(text, x, y) {
+    if (y < 0 || y >= this.rows) return;
+    for (let i = 0; i < text.length; i++) {
+      const col = x + i;
+      if (col >= 0 && col < this.cols) this.buf[y][col] = text[i];
+    }
+  }
+  drawTextCentered(text, y) {
+    this.drawText(text, Math.floor((this.cols - text.length) / 2), y);
+  }
+  toString() {
+    return this.buf.map(row => row.join('')).join('\n');
+  }
+}
+
+// ===== INPUT SYSTEM ==================================================
+const keys = {};
+let inputMode = 'game';
+let textBuffer = '';
+let textEnterPressed = false;
+let textBackspace = false;
+
+document.addEventListener('keydown', (e) => {
+  // Backtick toggles dev console regardless of mode
+  if (e.key === '`' || e.key === '~') {
+    devConsole.toggle();
+    e.preventDefault();
+    return;
+  }
+
+  if (inputMode === 'text') {
+    if (e.key === 'Enter') {
+      textEnterPressed = true;
+    } else if (e.key === 'Backspace') {
+      textBackspace = true;
+    } else if (e.key.length === 1 && /[A-Za-z0-9_\-]/.test(e.key)) {
+      textBuffer += e.key.toUpperCase();
+    }
+    e.preventDefault();
+  } else {
+    keys[e.key] = true;
+    keys[e.code] = true;
+    e.preventDefault();
+  }
+});
+
+document.addEventListener('keyup', (e) => {
+  keys[e.key] = false;
+  keys[e.code] = false;
+});
+
+function setupMobile() {
+  const btnL = document.getElementById('btn-left');
+  const btnR = document.getElementById('btn-right');
+  const btnF = document.getElementById('btn-fire');
+  if (!btnL) return;
+  [btnL, btnR, btnF].forEach(b => {
+    b.addEventListener('touchstart', (e) => e.preventDefault());
+    b.addEventListener('touchend', (e) => e.preventDefault());
+  });
+  btnL.addEventListener('touchstart', () => keys['ArrowLeft'] = true);
+  btnL.addEventListener('touchend', () => keys['ArrowLeft'] = false);
+  btnR.addEventListener('touchstart', () => keys['ArrowRight'] = true);
+  btnR.addEventListener('touchend', () => keys['ArrowRight'] = false);
+  btnF.addEventListener('touchstart', () => keys[' '] = true);
+  btnF.addEventListener('touchend', () => keys[' '] = false);
+}
+
+// ===== HIGH SCORES ===================================================
+function loadScores() {
+  try { return JSON.parse(localStorage.getItem('halbautomatik_scores') || '[]'); }
+  catch { return []; }
+}
+function saveScore(name, score) {
+  const scores = loadScores();
+  scores.push({ name: name.toUpperCase(), score, date: new Date().toISOString().slice(0, 10) });
+  scores.sort((a, b) => b.score - a.score);
+  localStorage.setItem('halbautomatik_scores', JSON.stringify(scores.slice(0, 20)));
+  devConsole.log('score', 'Saved: ' + name + ' = ' + score);
+}
+function getTopScores(n) { return loadScores().slice(0, n || 10); }
+
+// ===== GAME STATE ====================================================
+let currentScreen = 'boot';
+let screenEl = document.getElementById('screen');
+let buf = new ScreenBuffer(COLS, ROWS);
+
+let player = { x: 50, y: ROWS - 10, lives: 3, score: 0, name: '',
+               bulletCooldown: 0, dead: false, respawnTimer: 0 };
+
+let aliens = [], playerBullets = [], alienBullets = [], shields = [], explosions = [];
+let mystery = null, mysteryTimer = 0;
+let mysterySpawnAt = 15000 + Math.random() * 10000;
+let level2Raider = null;
+let stars = [];
+let alienDir = 1, alienMoveTimer = 0, alienMoveInterval = ALIEN_MOVE_BASE;
+let alienAnimFrame = 0, wave = 1;
+let gameOver = false, gamePaused = false, scoreSubmitted = false;
+
+let bootLines = [], bootIndex = 0, bootTimer = 0;
+let nameInput = '', nameCursor = true, nameCursorTimer = 0;
+
+// ===== STARS =========================================================
+function initStars() {
+  stars = [];
+  for (let i = 0; i < 60; i++) {
+    stars.push({
+      x: Math.floor(Math.random() * COLS),
+      y: Math.floor(Math.random() * ROWS),
+      ch: ['.', '+', '*', '`', ','][Math.floor(Math.random() * 5)],
+      speed: 0.2 + Math.random() * 0.5,
+      timer: 0,
+    });
+  }
+}
+function updateStars(dt) {
+  for (const s of stars) {
+    s.timer += dt;
+    if (s.timer > 1000 / s.speed) {
+      s.timer = 0; s.y++;
+      if (s.y >= ROWS) { s.y = 0; s.x = Math.floor(Math.random() * COLS); }
+    }
+  }
+}
+function drawStars(buf) {
+  for (const s of stars) {
+    if (s.y >= 0 && s.y < ROWS && s.x >= 0 && s.x < COLS) {
+      if (buf.buf[s.y][s.x] === ' ') buf.buf[s.y][s.x] = s.ch;
+    }
+  }
+}
+
+// ===== SHIELDS =======================================================
+function createShields() {
+  shields = [];
+  const pat = [
+    '  ########  ',
+    ' ########## ',
+    '############',
+    '############',
+    '###      ###',
+    '##        ##',
+  ];
+  const count = 4;
+  const spacing = Math.floor(COLS / (count + 1));
+  for (let i = 0; i < count; i++) {
+    const sx = spacing * (i + 1) - 6;
+    const sy = ROWS - 17;
+    for (let r = 0; r < pat.length; r++) {
+      for (let c = 0; c < pat[r].length; c++) {
+        if (pat[r][c] === '#') shields.push({ x: sx + c, y: sy + r, hp: 3 });
+      }
+    }
+  }
+  devConsole.log('game', 'Shields created: ' + shields.length + ' blocks');
+}
+
+// ===== ALIENS ========================================================
+function createAliens() {
+  aliens = [];
+  const rows = 5, cols = 8, alienW = 8, alienH = 5, gapX = 3, gapY = 2;
+  const totalW = cols * (alienW + gapX) - gapX;
+  const startX = Math.floor((COLS - totalW) / 2);
+  const startY = 5;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      let type, points;
+      if (r === 0) { type = 'A'; points = 30; }
+      else if (r <= 2) { type = 'B'; points = 20; }
+      else { type = 'C'; points = 10; }
+      aliens.push({
+        x: startX + c * (alienW + gapX),
+        y: startY + r * (alienH + gapY),
+        type, points, alive: true, w: alienW, h: alienH,
+      });
+    }
+  }
+  if (wave === 2) {
+    // Spawn the alien spaceship immediately at wave 2 start.
+    spawnLevel2Raider(startY);
+  } else {
+    level2Raider = null;
+  }
+  devConsole.log('game', 'Alien formation created: ' + aliens.length + ' aliens (' + rows + 'x' + cols + ')');
+}
+
+function spawnLevel2Raider(initialY) {
+  if (wave !== 2 || level2Raider) return;
+  const rs = spriteSize(SPRITES.raider1);
+  level2Raider = {
+    x: Math.floor((COLS - rs.w) / 2),
+    y: initialY,
+    hp: 7,
+    fireCooldown: 260,
+    descendSpeed: 0.004,
+  };
+}
+
+function getAlienSprite(type, frame) {
+  const f = frame % 2 === 0;
+  if (type === 'A') return f ? SPRITES.alienA1 : SPRITES.alienA2;
+  if (type === 'B') return f ? SPRITES.alienB1 : SPRITES.alienB2;
+  return f ? SPRITES.alienC1 : SPRITES.alienC2;
+}
+
+function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
+  return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+}
+
+// ===== BOOT SEQUENCE =================================================
+const BOOT_TEXT = [
+  'HALBAUTOMATIK SYSTEMS v2.7.4',
+  'COPYRIGHT (C) 2026 HALBAUTOMATIK.AI',
+  '',
+  'INITIALIZING MEMORY............ OK',
+  'LOADING ASCII RENDERER......... OK',
+  'CALIBRATING CRT PHOSPHORS...... OK',
+  'SCANNING FOR ALIEN THREATS..... FOUND',
+  '',
+  '*** WARNING: HOSTILE ENTITIES DETECTED ***',
+  '',
+  'LOADING DEFENSE PROTOCOL: SPACE INVADERS',
+  '',
+];
+
+function updateBoot(dt) {
+  bootTimer += dt;
+  if (bootTimer > 120 && bootIndex < BOOT_TEXT.length) {
+    bootLines.push(BOOT_TEXT[bootIndex]);
+    bootIndex++;
+    bootTimer = 0;
+  }
+  if (bootIndex >= BOOT_TEXT.length && bootTimer > 800) {
+    devConsole.log('sys', 'Boot complete -> title screen');
+    currentScreen = 'title';
+    inputMode = 'text';
+    textBuffer = '';
+  }
+  if (keys['Enter'] || keys[' ']) {
+    devConsole.log('sys', 'Boot skipped -> title screen');
+    currentScreen = 'title';
+    inputMode = 'text';
+    textBuffer = '';
+    keys['Enter'] = false;
+    keys[' '] = false;
+  }
+}
+
+function drawBoot(buf) {
+  for (let i = 0; i < bootLines.length; i++) {
+    buf.drawText(bootLines[i], 4, 4 + i);
+  }
+  if (bootIndex >= BOOT_TEXT.length) {
+    const blink = Math.floor(Date.now() / 400) % 2 === 0;
+    if (blink) buf.drawText('PRESS ANY KEY TO CONTINUE_', 4, 4 + bootLines.length + 1);
+  }
+}
+
+// ===== TITLE SCREEN ==================================================
+const LOGO_ART = [
+  '              /\\',
+  '             /  \\',
+  '            /    \\',
+  '           /      \\',
+  '          /   /\\   \\',
+  '         /   /  \\   \\',
+  '        /   /    \\   \\',
+  '       /   /      /   /',
+  '      /   /      /   /',
+  '      \\  /      /   /',
+  '       \\/      /   /',
+  '        \\     /   /',
+  '         \\   /   /',
+  '          \\ /   /',
+  '           \\   /',
+  '            \\ /',
+  '             V',
+];
+
+const TITLE_TEXT = [
+  ' _   _    _    _     ____    _   _   _ _____ ___  __  __    _  _____ ___ _  __',
+  '| | | |  / \\  | |   | __ )  / \\ | | | |_   _/ _ \\|  \\/  |  / \\|_   _|_ _| |/ /',
+  '| |_| | / _ \\ | |   |  _ \\ / _ \\| | | | | || | | | |\\/| | / _ \\ | |  | || \' / ',
+  '|  _  |/ ___ \\| |___| |_) / ___ \\ |_| | | || |_| | |  | |/ ___ \\| |  | || . \\ ',
+  '|_| |_/_/   \\_\\_____|____/_/   \\_\\___/  |_| \\___/|_|  |_/_/   \\_\\_| |___|_|\\_\\',
+];
+
+const SUBTITLE = 'S  P  A  C  E     I  N  V  A  D  E  R  S';
+
+function updateTitle(dt) {
+  inputMode = 'text';
+  nameCursorTimer += dt;
+  if (nameCursorTimer > 400) { nameCursor = !nameCursor; nameCursorTimer = 0; }
+
+  if (textBuffer.length > 0) {
+    nameInput += textBuffer;
+    nameInput = nameInput.slice(0, 12);
+    textBuffer = '';
+  }
+  if (textBackspace) {
+    nameInput = nameInput.slice(0, -1);
+    textBackspace = false;
+  }
+  if (textEnterPressed) {
+    textEnterPressed = false;
+    if (nameInput.length > 0) {
+      player.name = nameInput;
+      devConsole.log('input', 'Player registered: ' + nameInput);
+      inputMode = 'game';
+      startGame();
+    }
+  }
+}
+
+function drawTitle(buf) {
+  let ly = 1;
+  for (let i = 0; i < LOGO_ART.length; i++) {
+    buf.drawTextCentered(LOGO_ART[i], ly + i);
+  }
+
+  let ty = ly + LOGO_ART.length + 1;
+  for (let i = 0; i < TITLE_TEXT.length; i++) {
+    buf.drawTextCentered(TITLE_TEXT[i], ty + i);
+  }
+
+  ty += TITLE_TEXT.length + 1;
+  buf.drawTextCentered(SUBTITLE, ty);
+
+  ty += 2;
+  buf.drawTextCentered('================================================', ty);
+
+  ty += 2;
+  buf.drawTextCentered('ENTER YOUR CALLSIGN, PILOT:', ty);
+  ty += 2;
+  const cursor = nameCursor ? '_' : ' ';
+  const display = nameInput + cursor;
+  const field = '>  ' + display + ' '.repeat(Math.max(0, 12 - nameInput.length)) + '  <';
+  buf.drawTextCentered(field, ty);
+
+  if (nameInput.length > 0) {
+    ty += 2;
+    const blink = Math.floor(Date.now() / 600) % 2 === 0;
+    if (blink) buf.drawTextCentered('>>> PRESS ENTER TO LAUNCH <<<', ty);
+  }
+
+  const scores = getTopScores(5);
+  if (scores.length > 0) {
+    let sy = 38;
+    buf.drawTextCentered('--- HIGH SCORES ---', sy);
+    for (let i = 0; i < scores.length; i++) {
+      const s = scores[i];
+      const rank = String(i + 1).padStart(2, ' ');
+      const name = s.name.padEnd(12, '.');
+      const pts = String(s.score).padStart(8, ' ');
+      buf.drawTextCentered(rank + '  ' + name + '  ' + pts, sy + 1 + i);
+    }
+  }
+
+  buf.drawTextCentered('HALBAUTOMATIK.AI // 2026', ROWS - 3);
+  buf.drawTextCentered('ARROWS/WASD: MOVE   SPACE: FIRE   P: PAUSE   `: DEV CONSOLE', ROWS - 2);
+}
+
+// ===== START GAME ====================================================
+function startGame() {
+  currentScreen = 'game';
+  inputMode = 'game';
+  player.x = Math.floor(COLS / 2) - 5;
+  player.y = ROWS - 10;
+  player.lives = 3;
+  player.score = 0;
+  player.dead = false;
+  player.respawnTimer = 0;
+  player.bulletCooldown = 0;
+  wave = 1;
+  gameOver = false;
+  scoreSubmitted = false;
+  gameOverTimer = 0;
+  alienDir = 1;
+  alienMoveInterval = ALIEN_MOVE_BASE;
+  alienMoveTimer = 0;
+  alienAnimFrame = 0;
+  mysteryTimer = 0;
+  mysterySpawnAt = 15000 + Math.random() * 10000;
+  mystery = null;
+  playerBullets = [];
+  alienBullets = [];
+  explosions = [];
+  createAliens();
+  createShields();
+  devConsole.log('game', '=== GAME STARTED === Pilot: ' + player.name);
+  devConsole.log('game', 'Grid: ' + COLS + 'x' + ROWS + '  Alien speed: ' + alienMoveInterval + 'ms');
+}
+
+// ===== GAME UPDATE ===================================================
+function updateGame(dt) {
+  if (gameOver) { updateGameOver(dt); return; }
+  if (gamePaused) {
+    if (keys['p'] || keys['P']) {
+      gamePaused = false; keys['p'] = false; keys['P'] = false;
+      devConsole.log('game', 'Unpaused');
+    }
+    return;
+  }
+  if (keys['p'] || keys['P']) {
+    gamePaused = true; keys['p'] = false; keys['P'] = false;
+    devConsole.log('game', 'Paused');
+    return;
+  }
+
+  const shipSize = spriteSize(SPRITES.player);
+
+  // Player movement
+  if (!player.dead) {
+    const speed = 0.35;
+    if (keys['ArrowLeft'] || keys['a'] || keys['A'] || keys['KeyA'])
+      player.x = Math.max(1, player.x - speed * dt / TICK_RATE);
+    if (keys['ArrowRight'] || keys['d'] || keys['D'] || keys['KeyD'])
+      player.x = Math.min(COLS - shipSize.w - 1, player.x + speed * dt / TICK_RATE);
+
+    player.bulletCooldown = Math.max(0, player.bulletCooldown - dt);
+    if (keys[' '] && player.bulletCooldown <= 0) {
+      playerBullets.push({ x: Math.floor(player.x) + Math.floor(shipSize.w / 2), y: player.y - 1 });
+      player.bulletCooldown = 250;
+    }
+  } else {
+    player.respawnTimer -= dt;
+    if (player.respawnTimer <= 0) {
+      player.dead = false;
+      player.x = Math.floor(COLS / 2) - 5;
+      devConsole.log('game', 'Player respawned. Lives remaining: ' + player.lives);
+    }
+  }
+
+  // Player bullets
+  for (let i = playerBullets.length - 1; i >= 0; i--) {
+    const b = playerBullets[i];
+    b.y -= dt * 0.025;
+    if (b.y < 0) { playerBullets.splice(i, 1); continue; }
+    let hit = false;
+    for (const a of aliens) {
+      if (!a.alive) continue;
+      if (rectsOverlap(b.x, Math.floor(b.y), 1, 1, a.x, a.y, a.w, a.h)) {
+        a.alive = false;
+        player.score += a.points;
+        explosions.push({ x: a.x, y: a.y, timer: 300, frame: 0 });
+        hit = true;
+        const alive = aliens.filter(al => al.alive).length;
+        devConsole.log('hit', 'Alien type ' + a.type + ' destroyed (+' + a.points + 'pts) | ' + alive + ' remaining');
+        break;
+      }
+    }
+    if (!hit && mystery) {
+      const ms = spriteSize(SPRITES.mystery);
+      if (rectsOverlap(b.x, Math.floor(b.y), 1, 1, mystery.x, mystery.y, ms.w, ms.h)) {
+        const bonus = [50, 100, 150, 200, 300][Math.floor(Math.random() * 5)];
+        player.score += bonus;
+        explosions.push({ x: mystery.x, y: mystery.y, timer: 400, frame: 0, text: '+' + bonus });
+        mystery = null; hit = true;
+        devConsole.log('score', 'Mystery ship destroyed! Bonus: +' + bonus);
+      }
+    }
+    if (!hit && level2Raider) {
+      const rs = spriteSize(SPRITES.raider1);
+      if (rectsOverlap(b.x, Math.floor(b.y), 1, 1, Math.floor(level2Raider.x), Math.floor(level2Raider.y), rs.w, rs.h)) {
+        level2Raider.hp--;
+        hit = true;
+        if (level2Raider.hp <= 0) {
+          player.score += 180;
+          explosions.push({
+            x: Math.floor(level2Raider.x) + Math.floor(rs.w / 2) - 4,
+            y: Math.floor(level2Raider.y) + 1,
+            timer: 500,
+            frame: 0,
+            text: '+180',
+          });
+          level2Raider = null;
+        }
+      }
+    }
+    if (!hit) {
+      for (let si = shields.length - 1; si >= 0; si--) {
+        const s = shields[si];
+        if (Math.floor(b.x) === s.x && Math.floor(b.y) === s.y) {
+          s.hp--; if (s.hp <= 0) shields.splice(si, 1);
+          hit = true; break;
+        }
+      }
+    }
+    if (hit) playerBullets.splice(i, 1);
+  }
+
+  // Alien movement
+  alienMoveTimer += dt;
+  const aliveAliens = aliens.filter(a => a.alive);
+  if (alienMoveTimer >= alienMoveInterval && aliveAliens.length > 0) {
+    alienMoveTimer = 0;
+    alienAnimFrame++;
+    let minX = COLS, maxX = 0;
+    for (const a of aliveAliens) { minX = Math.min(minX, a.x); maxX = Math.max(maxX, a.x + a.w); }
+    let dropDown = false;
+    if (alienDir === 1 && maxX >= COLS - 3) { alienDir = -1; dropDown = true; }
+    else if (alienDir === -1 && minX <= 3) { alienDir = 1; dropDown = true; }
+    for (const a of aliveAliens) {
+      if (dropDown) a.y += 2; else a.x += alienDir * 2;
+    }
+    const newInterval = Math.max(60, ALIEN_MOVE_BASE * (aliveAliens.length / aliens.length));
+    if (Math.abs(newInterval - alienMoveInterval) > 10) {
+      devConsole.log('game', 'Alien speed changed: ' + Math.floor(alienMoveInterval) + 'ms -> ' + Math.floor(newInterval) + 'ms');
+    }
+    alienMoveInterval = newInterval;
+    if (dropDown) {
+      devConsole.log('warn', 'Aliens dropped! Bottom-most row now at y=' + Math.max(...aliveAliens.map(a => a.y + a.h)));
+    }
+  }
+
+  // Alien bullets
+  if (aliveAliens.length > 0 && Math.random() < 0.002 * dt / TICK_RATE) {
+    const shooter = aliveAliens[Math.floor(Math.random() * aliveAliens.length)];
+    alienBullets.push({ x: shooter.x + Math.floor(shooter.w / 2), y: shooter.y + shooter.h });
+  }
+  for (let i = alienBullets.length - 1; i >= 0; i--) {
+    const b = alienBullets[i];
+    b.y += dt * 0.015;
+    if (b.y >= ROWS) { alienBullets.splice(i, 1); continue; }
+    if (!player.dead && rectsOverlap(Math.floor(b.x), Math.floor(b.y), 1, 1,
+        Math.floor(player.x), player.y, shipSize.w, shipSize.h)) {
+      playerHit(); alienBullets.splice(i, 1); continue;
+    }
+    let sh = false;
+    for (let si = shields.length - 1; si >= 0; si--) {
+      const s = shields[si];
+      if (Math.floor(b.x) === s.x && Math.floor(b.y) === s.y) {
+        s.hp--; if (s.hp <= 0) shields.splice(si, 1); sh = true; break;
+      }
+    }
+    if (sh) alienBullets.splice(i, 1);
+  }
+
+  // Aliens reached bottom?
+  for (const a of aliveAliens) {
+    if (a.y + a.h >= player.y) {
+      devConsole.log('warn', 'INVASION! Aliens reached player level -> GAME OVER');
+      player.lives = 0; gameOver = true; return;
+    }
+  }
+
+  // Mystery ship
+  mysteryTimer += dt;
+  if (!mystery && mysteryTimer > mysterySpawnAt) {
+    mysteryTimer = 0;
+    mysterySpawnAt = 15000 + Math.random() * 10000;
+    mystery = { x: -12, y: 2, dir: 1 };
+    if (Math.random() > 0.5) { mystery.x = COLS + 2; mystery.dir = -1; }
+    devConsole.log('game', 'Mystery ship spawned! Dir: ' + (mystery.dir > 0 ? 'RIGHT' : 'LEFT'));
+  }
+  if (mystery) {
+    mystery.x += mystery.dir * dt * 0.04;
+    if (mystery.x > COLS + 5 || mystery.x < -15) {
+      devConsole.log('game', 'Mystery ship escaped');
+      mystery = null;
+    }
+  }
+
+  if (wave === 2 && level2Raider) {
+    const rs = spriteSize(SPRITES.raider1);
+    const maxY = Math.max(2, player.y - rs.h - 2);
+    if (level2Raider.y < maxY) {
+      level2Raider.y = Math.min(maxY, level2Raider.y + dt * level2Raider.descendSpeed);
+    }
+    level2Raider.fireCooldown -= dt;
+    if (level2Raider.fireCooldown <= 0) {
+      const cx = Math.floor(level2Raider.x) + Math.floor(rs.w / 2);
+      const by = Math.floor(level2Raider.y) + rs.h;
+      alienBullets.push({ x: cx - 5, y: by });
+      alienBullets.push({ x: cx, y: by });
+      alienBullets.push({ x: cx + 5, y: by });
+      level2Raider.fireCooldown = 420 + Math.random() * 220;
+    }
+  }
+
+  // Explosions
+  for (let i = explosions.length - 1; i >= 0; i--) {
+    explosions[i].timer -= dt;
+    explosions[i].frame = explosions[i].timer > 200 ? 0 : 1;
+    if (explosions[i].timer <= 0) explosions.splice(i, 1);
+  }
+
+  if (aliveAliens.length === 0) nextWave();
+}
+
+function playerHit() {
+  player.lives--;
+  player.dead = true;
+  player.respawnTimer = 1500;
+  explosions.push({ x: Math.floor(player.x), y: player.y, timer: 500, frame: 0 });
+  screenEl.classList.add('flash');
+  setTimeout(() => screenEl.classList.remove('flash'), 300);
+  devConsole.log('hit', 'PLAYER HIT! Lives: ' + player.lives);
+  if (player.lives <= 0) {
+    gameOver = true;
+    devConsole.log('game', '=== GAME OVER === Final score: ' + player.score);
+  }
+}
+
+function nextWave() {
+  wave++;
+  alienDir = 1;
+  alienMoveInterval = Math.max(80, ALIEN_MOVE_BASE - wave * 40);
+  alienMoveTimer = 0; alienAnimFrame = 0;
+  playerBullets = []; alienBullets = [];
+  level2Raider = null;
+  mystery = null; mysteryTimer = 0;
+  mysterySpawnAt = 15000 + Math.random() * 10000;
+  createAliens();
+  devConsole.log('wave', '=== WAVE ' + wave + ' === Speed: ' + Math.floor(alienMoveInterval) + 'ms  Score: ' + player.score);
+}
+
+// ===== GAME OVER =====================================================
+let gameOverTimer = 0;
+
+function updateGameOver(dt) {
+  gameOverTimer += dt;
+  if (!scoreSubmitted && player.name) {
+    saveScore(player.name, player.score);
+    scoreSubmitted = true;
+  }
+  inputMode = 'game';
+  if (gameOverTimer > 2000 && (keys['Enter'] || keys[' '])) {
+    keys['Enter'] = false; keys[' '] = false;
+    gameOverTimer = 0;
+    currentScreen = 'title';
+    inputMode = 'text';
+    textBuffer = '';
+    nameInput = player.name;
+    devConsole.log('sys', 'Returned to title screen');
+  }
+}
+
+// ===== DRAW GAME =====================================================
+function drawGame(buf) {
+  drawStars(buf);
+
+  const livesStr = new Array(Math.max(0, player.lives)).fill('/\\').join(' ');
+  const hud = '  PILOT: ' + player.name + '    SCORE: ' + String(player.score).padStart(8, '0') +
+              '    WAVE: ' + wave + '    LIVES: ' + livesStr;
+  buf.drawText(hud, 0, 0);
+  for (let c = 0; c < COLS; c++) buf.buf[1][c] = '-';
+
+  for (const s of shields) {
+    if (s.y >= 0 && s.y < ROWS && s.x >= 0 && s.x < COLS) {
+      buf.buf[s.y][s.x] = s.hp >= 3 ? '#' : s.hp === 2 ? '=' : '.';
+    }
+  }
+
+  for (const a of aliens) {
+    if (a.alive) buf.drawSprite(getAlienSprite(a.type, alienAnimFrame), a.x, a.y);
+  }
+  if (level2Raider) {
+    const raiderSprite = alienAnimFrame % 2 === 0 ? SPRITES.raider1 : SPRITES.raider2;
+    buf.drawSprite(raiderSprite, Math.floor(level2Raider.x), Math.floor(level2Raider.y));
+  }
+  if (mystery) buf.drawSprite(SPRITES.mystery, Math.floor(mystery.x), mystery.y);
+  if (!player.dead) buf.drawSprite(SPRITES.player, Math.floor(player.x), player.y);
+
+  for (const b of playerBullets) {
+    const by = Math.floor(b.y);
+    if (by >= 0 && by < ROWS && b.x >= 0 && b.x < COLS) {
+      buf.buf[by][b.x] = '|';
+      if (by - 1 >= 0) buf.buf[by - 1][b.x] = '\'';
+    }
+  }
+  for (const b of alienBullets) {
+    const by = Math.floor(b.y);
+    if (by >= 0 && by < ROWS && b.x >= 0 && b.x < COLS) {
+      buf.buf[by][b.x] = ':';
+      if (by + 1 < ROWS) buf.buf[by + 1][b.x] = '.';
+    }
+  }
+
+  for (const e of explosions) {
+    buf.drawSprite(e.frame === 0 ? SPRITES.explode1 : SPRITES.explode2, e.x, e.y);
+    if (e.text) buf.drawText(e.text, e.x + 2, e.y - 1);
+  }
+
+  if (gamePaused && !gameOver) {
+    buf.drawTextCentered('+----------------------+', 20);
+    buf.drawTextCentered('|    GAME  PAUSED      |', 21);
+    buf.drawTextCentered('|  PRESS P TO RESUME   |', 22);
+    buf.drawTextCentered('+----------------------+', 23);
+  }
+
+  if (gameOver) {
+    const cy = 15;
+    const W = 43;
+    const edge = '+' + '-'.repeat(W - 2) + '+';
+    const blank = '|' + ' '.repeat(W - 2) + '|';
+    const pad = (s) => '|' + (' ' + s).slice(0, W - 2).padEnd(W - 2) + '|';
+
+    buf.drawTextCentered(edge, cy);
+    buf.drawTextCentered(blank, cy + 1);
+    buf.drawTextCentered(pad('        G A M E   O V E R          '), cy + 2);
+    buf.drawTextCentered(blank, cy + 3);
+    buf.drawTextCentered(pad('  FINAL SCORE: ' + String(player.score).padStart(8, '0') + '             '), cy + 4);
+    buf.drawTextCentered(pad('  WAVES SURVIVED: ' + String(wave).padStart(3, ' ') + '               '), cy + 5);
+    buf.drawTextCentered(blank, cy + 6);
+    const scores = getTopScores(5);
+    buf.drawTextCentered(pad('       --- HIGH SCORES ---           '), cy + 7);
+    for (let i = 0; i < 5; i++) {
+      if (i < scores.length) {
+        const s = scores[i];
+        buf.drawTextCentered(pad('   ' + String(i+1) + '. ' + s.name.padEnd(12) + ' ' + String(s.score).padStart(8) + '    '), cy + 8 + i);
+      } else {
+        buf.drawTextCentered(blank, cy + 8 + i);
+      }
+    }
+    buf.drawTextCentered(blank, cy + 13);
+    if (gameOverTimer > 2000) {
+      const blink = Math.floor(Date.now() / 500) % 2 === 0;
+      buf.drawTextCentered(blink ? pad('    PRESS ENTER TO CONTINUE         ') : blank, cy + 14);
+    } else {
+      buf.drawTextCentered(blank, cy + 14);
+    }
+    buf.drawTextCentered(edge, cy + 15);
+  }
+
+  for (let c = 0; c < COLS; c++) buf.buf[ROWS - 1][c] = '-';
+}
+
+// ===== FONT SIZING ===================================================
+function fitScreen() {
+  const crtEl = document.getElementById('crt');
+rs ons clean  const vw = crtEl.clientWidth;
+  const vh = crtEl.clientHeight;
+  const charRatio = 0.6;
+  const sizeByW = vw / (COLS * charRatio);
+  const sizeByH = vh / (ROWS * 1.18);
+  screenEl.style.fontSize = Math.max(6, Math.min(Math.min(sizeByW, sizeByH) * 0.92, 20)) + 'px';
+}
+window.addEventListener('resize', fitScreen);
+
+// ===== MAIN LOOP =====================================================
+let lastTime = 0;
+
+function gameLoop(timestamp) {
+  const dt = Math.min(lastTime ? timestamp - lastTime : TICK_RATE, 100);
+  lastTime = timestamp;
+
+  updateStars(dt);
+  devConsole.updateStats(dt);
+  buf.clear();
+
+  switch (currentScreen) {
+    case 'boot':  updateBoot(dt);  drawBoot(buf);  break;
+    case 'title': updateTitle(dt); drawStars(buf); drawTitle(buf); break;
+    case 'game':  updateGame(dt);  drawGame(buf);  break;
+  }
+
+  screenEl.textContent = buf.toString();
+  requestAnimationFrame(gameLoop);
+}
+
+// ===== INIT ==========================================================
+devConsole.log('sys', 'Halbautomatik Space Invaders v1.0 initializing...');
+devConsole.log('sys', 'Grid: ' + COLS + 'x' + ROWS + ' | Courier New monospace');
+devConsole.log('sys', 'Press ` (backtick) to toggle this console');
+initStars();
+fitScreen();
+setupMobile();
+devConsole.log('sys', 'Init complete. Starting game loop.');
+requestAnimationFrame(gameLoop);
+
+ http://localhost:5173/space-invaders/</script>
+</body>
+</html>

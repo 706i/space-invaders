@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JavaScript Inspector</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .result {
+            background: #252526;
+            border: 1px solid #3e3e42;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .label {
+            color: #4ec9b0;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .value {
+            color: #ce9178;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        button:hover {
+            background: #1177bb;
+        }
+    </style>
+</head>
+<body>
+    <h1>JavaScript Inspector for halbautomatik.ai</h1>
+    <button onclick="runTests()">Run All Tests</button>
+    <div id="results"></div>
+
+    <script>
+        async function runTests() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<p>Opening halbautomatik.ai in iframe...</p>';
+            
+            // Create an iframe to load the target site
+            const iframe = document.createElement('iframe');
+            iframe.style.width = '0';
+            iframe.style.height = '0';
+            iframe.style.border = 'none';
+            iframe.style.position = 'absolute';
+            iframe.src = 'https://halbautomatik.ai/';
+            document.body.appendChild(iframe);
+            
+            // Wait for iframe to load
+            await new Promise((resolve) => {
+                iframe.onload = resolve;
+            });
+            
+            // Wait additional time for full page load
+            await new Promise(resolve => setTimeout(resolve, 8000));
+            
+            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+            const results = [];
+            
+            try {
+                // Test 1: onclick attribute
+                const test1 = iframeDoc.querySelector('#space-invaders-link')?.getAttribute('onclick');
+                results.push({
+                    label: '1. document.querySelector(\'#space-invaders-link\').getAttribute(\'onclick\')',
+                    value: test1 || 'null'
+                });
+                
+                // Test 2: outerHTML
+                const test2 = iframeDoc.querySelector('#space-invaders-link')?.outerHTML;
+                results.push({
+                    label: '2. document.querySelector(\'#space-invaders-link\').outerHTML',
+                    value: test2 || 'null'
+                });
+                
+                // Test 3: pointer-events on #space-invaders-link
+                const el = iframeDoc.querySelector('#space-invaders-link');
+                const test3 = el ? iframe.contentWindow.getComputedStyle(el).pointerEvents : 'null';
+                results.push({
+                    label: '3. window.getComputedStyle(document.querySelector(\'#space-invaders-link\')).pointerEvents',
+                    value: test3
+                });
+                
+                // Test 4: pointer-events on .header-right
+                const headerRight = iframeDoc.querySelector('#space-invaders-link')?.closest('.header-right');
+                const test4 = headerRight ? iframe.contentWindow.getComputedStyle(headerRight).pointerEvents : 'null';
+                results.push({
+                    label: '4. window.getComputedStyle(document.querySelector(\'#space-invaders-link\').closest(\'.header-right\')).pointerEvents',
+                    value: test4
+                });
+                
+                // Test 5: pointer-events on .header
+                const header = iframeDoc.querySelector('.header');
+                const test5 = header ? iframe.contentWindow.getComputedStyle(header).pointerEvents : 'null';
+                results.push({
+                    label: '5. window.getComputedStyle(document.querySelector(\'.header\')).pointerEvents',
+                    value: test5
+                });
+                
+                // Test 6: pointer-events on #nav
+                const nav = iframeDoc.querySelector('#nav');
+                const test6 = nav ? iframe.contentWindow.getComputedStyle(nav).pointerEvents : 'null';
+                results.push({
+                    label: '6. window.getComputedStyle(document.querySelector(\'#nav\')).pointerEvents',
+                    value: test6
+                });
+                
+                // Test 7: Parent element traversal
+                const test7Result = (function() {
+                    var el = iframeDoc.querySelector('#space-invaders-link');
+                    var result = [];
+                    while (el) {
+                        var pe = iframe.contentWindow.getComputedStyle(el).pointerEvents;
+                        result.push(el.tagName + (el.id ? '#' + el.id : '') + (el.className ? '.' + el.className.split(' ')[0] : '') + ' => pointer-events: ' + pe);
+                        el = el.parentElement;
+                    }
+                    return result.join('\n');
+                })();
+                results.push({
+                    label: '7. Parent element traversal with pointer-events',
+                    value: test7Result
+                });
+                
+            } catch (error) {
+                results.push({
+                    label: 'ERROR',
+                    value: error.toString()
+                });
+            }
+            
+            // Display results
+            let html = '';
+            results.forEach(result => {
+                html += `
+                    <div class="result">
+                        <div class="label">${result.label}</div>
+                        <div class="value">${result.value}</div>
+                    </div>
+                `;
+            });
+            resultsDiv.innerHTML = html;
+        }
+    </script>
+</body>
+</html>

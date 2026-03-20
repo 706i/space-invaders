@@ -1,0 +1,23 @@
+{
+  "name": "halbautomatik-space-invaders",
+  "version": "1.0.0",
+  "description": "ASCII Space Invaders — Easter egg game for Halbautomatik.ai",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js --port=8080"
+  },
+  "keywords": [
+    "ascii",
+    "space-invaders",
+    "retro",
+    "game",
+    "halbautomatik"
+  ],
+  "author": "Halbautomatik",
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "playwright": "^1.58.2"
+  }
+}
