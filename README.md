@@ -11,17 +11,17 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-This creates the project at `/Users/tohbineu/Software-Dev/Claude/halbautomatik-space-invaders` and launches the server.
+This creates the project at `~/halbautomatik-space-invaders` and launches the server.
 
 ### Option B: Manual
 
 ```bash
 # Copy project to your dev folder
-mkdir -p /Users/tohbineu/Software-Dev/Claude/halbautomatik-space-invaders
-cp -r ./* /Users/tohbineu/Software-Dev/Claude/halbautomatik-space-invaders/
+mkdir -p ~/halbautomatik-space-invaders
+cp -r ./* ~/halbautomatik-space-invaders/
 
 # Start the server
-cd /Users/tohbineu/Software-Dev/Claude/halbautomatik-space-invaders
+cd ~/halbautomatik-space-invaders
 node server.js
 ```
 
